@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pizza Girl</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 520px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 28px;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+    .subtitle {
+      color: #888;
+      margin-bottom: 32px;
+      font-size: 14px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      color: #aaa;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px 14px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: #ff6b35;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 60px;
+    }
+    select {
+      appearance: none;
+      cursor: pointer;
+    }
+    .row {
+      display: flex;
+      gap: 12px;
+    }
+    .row .form-group {
+      flex: 1;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #ff6b35;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.2s;
+    }
+    button:hover { background: #e55a2b; }
+    button:disabled {
+      background: #333;
+      color: #666;
+      cursor: not-allowed;
+    }
+
+    /* Status panel */
+    .status-panel {
+      margin-top: 28px;
+      padding: 20px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 12px;
+      display: none;
+    }
+    .status-panel.visible { display: block; }
+    .status-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #666;
+    }
+    .status-dot.searching { background: #f0c040; animation: pulse 1s infinite; }
+    .status-dot.calling_listener { background: #c080f0; animation: pulse 1s infinite; }
+    .status-dot.listener_connected { background: #c080f0; animation: pulse 1s infinite; }
+    .status-dot.calling { background: #40a0f0; animation: pulse 1s infinite; }
+    .status-dot.in_progress { background: #40f080; animation: pulse 1s infinite; }
+    .status-dot.completed { background: #40f080; }
+    .status-dot.error { background: #f04040; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .status-label {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .restaurant-info {
+      font-size: 13px;
+      color: #aaa;
+      margin-top: 8px;
+      line-height: 1.6;
+    }
+    .restaurant-info strong { color: #ccc; }
+
+    /* Audio player */
+    .audio-section {
+      margin-top: 16px;
+      display: none;
+    }
+    .audio-section.visible { display: block; }
+    .audio-section label {
+      margin-bottom: 8px;
+    }
+    audio {
+      width: 100%;
+      margin-top: 4px;
+    }
+
+    .error-msg {
+      color: #f04040;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: #666;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Pizza Girl</h1>
+    <p class="subtitle">AI voice agent that calls a pizza place and orders for you</p>
+
+    <form id="order-form">
+      <div class="form-group">
+        <label for="restaurant">Restaurant (search query)</label>
+        <input type="text" id="restaurant" placeholder="e.g. Domino's Pizza near Times Square" required>
+      </div>
+      <div class="form-group">
+        <label for="items">Order Items</label>
+        <textarea id="items" placeholder="e.g. 1 large pepperoni pizza, 1 order of garlic bread" required></textarea>
+      </div>
+      <div class="row">
+        <div class="form-group">
+          <label for="name">Your Name</label>
+          <input type="text" id="name" value="Alex" required>
+        </div>
+        <div class="form-group">
+          <label for="payment">Payment</label>
+          <select id="payment">
+            <option value="cash">Cash</option>
+            <option value="credit card">Credit Card</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="order-type">Order Type</label>
+        <select id="order-type">
+          <option value="pickup">Pickup</option>
+          <option value="delivery">Delivery</option>
+        </select>
+      </div>
+      <div class="form-group" id="address-group" style="display:none;">
+        <label for="address">Delivery Address</label>
+        <input type="text" id="address" placeholder="e.g. 123 Main St, Apt 4B">
+      </div>
+      <div class="form-group">
+        <label for="special-instructions">Special Instructions</label>
+        <textarea id="special-instructions" placeholder="e.g. Pick a drink for me, ask about any specials, add a dessert if they have one"></textarea>
+        <div class="hint">The agent will use its judgment — doesn't have to follow word for word</div>
+      </div>
+      <div class="form-group">
+        <label for="user-phone">Your Phone Number</label>
+        <input type="tel" id="user-phone" placeholder="e.g. +14155551234" required>
+        <div class="hint">We'll call you first, then call the restaurant so you can listen in live</div>
+      </div>
+      <button type="submit" id="submit-btn">Place Order</button>
+    </form>
+
+    <div class="status-panel" id="status-panel">
+      <div class="status-header">
+        <div class="status-dot" id="status-dot"></div>
+        <span class="status-label" id="status-label">Starting...</span>
+      </div>
+      <div class="restaurant-info" id="restaurant-info"></div>
+      <div class="error-msg" id="error-msg"></div>
+      <div class="audio-section" id="audio-section">
+        <label>Call Recording (Restaurant)</label>
+        <audio id="audio-player" controls></audio>
+      </div>
+      <div class="audio-section" id="listener-audio-section">
+        <label>Call Recording (Your Phone)</label>
+        <audio id="listener-audio-player" controls></audio>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('order-form');
+    const submitBtn = document.getElementById('submit-btn');
+    const statusPanel = document.getElementById('status-panel');
+    const statusDot = document.getElementById('status-dot');
+    const statusLabel = document.getElementById('status-label');
+    const restaurantInfo = document.getElementById('restaurant-info');
+    const errorMsg = document.getElementById('error-msg');
+    const audioSection = document.getElementById('audio-section');
+    const audioPlayer = document.getElementById('audio-player');
+    const listenerAudioSection = document.getElementById('listener-audio-section');
+    const listenerAudioPlayer = document.getElementById('listener-audio-player');
+
+    let currentOrderId = null;
+    let pollInterval = null;
+
+    // Show/hide delivery address field
+    const orderType = document.getElementById('order-type');
+    const addressGroup = document.getElementById('address-group');
+    const addressInput = document.getElementById('address');
+    orderType.addEventListener('change', () => {
+      const isDelivery = orderType.value === 'delivery';
+      addressGroup.style.display = isDelivery ? 'block' : 'none';
+      addressInput.required = isDelivery;
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Placing Order...';
+      errorMsg.textContent = '';
+      statusPanel.classList.add('visible');
+      audioSection.classList.remove('visible');
+      listenerAudioSection.classList.remove('visible');
+
+      updateStatus('searching');
+
+      try {
+        const res = await fetch('/start-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            restaurant_query: document.getElementById('restaurant').value,
+            order_items: document.getElementById('items').value,
+            customer_name: document.getElementById('name').value,
+            payment_method: document.getElementById('payment').value,
+            order_type: document.getElementById('order-type').value,
+            delivery_address: document.getElementById('address').value,
+            special_instructions: document.getElementById('special-instructions').value,
+            user_phone: document.getElementById('user-phone').value,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to start order');
+        }
+
+        currentOrderId = data.order_id;
+        if (data.restaurant) {
+          restaurantInfo.innerHTML =
+            `<strong>${data.restaurant.name}</strong><br>` +
+            `${data.restaurant.address}<br>` +
+            `${data.restaurant.phone_number}`;
+        }
+        updateStatus(data.status);
+        startPolling();
+
+      } catch (err) {
+        updateStatus('error');
+        errorMsg.textContent = err.message;
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Place Order';
+      }
+    });
+
+    function updateStatus(status) {
+      statusDot.className = 'status-dot ' + status;
+      const labels = {
+        searching: 'Searching for restaurant...',
+        calling_listener: 'Calling your phone...',
+        listener_connected: 'You\'re connected — calling restaurant...',
+        calling: 'Calling restaurant...',
+        in_progress: 'On the phone — listen on your phone!',
+        completed: 'Order complete!',
+        error: 'Error',
+      };
+      statusLabel.textContent = labels[status] || status;
+    }
+
+    function startPolling() {
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = setInterval(async () => {
+        if (!currentOrderId) return;
+        try {
+          const res = await fetch(`/order/${currentOrderId}`);
+          const data = await res.json();
+          updateStatus(data.status);
+
+          if (data.status === 'completed') {
+            clearInterval(pollInterval);
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Place Order';
+            // Check for recording
+            checkRecording();
+          }
+        } catch (err) {
+          // ignore polling errors
+        }
+      }, 2000);
+    }
+
+    async function checkRecording() {
+      // Poll for recording a few times since it may arrive after call ends
+      let foundRestaurant = false;
+      let foundListener = false;
+      for (let i = 0; i < 10; i++) {
+        try {
+          const res = await fetch(`/recording/${currentOrderId}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.recording_url && !foundRestaurant) {
+              audioPlayer.src = data.recording_url;
+              audioSection.classList.add('visible');
+              foundRestaurant = true;
+            }
+            if (data.listener_recording_url && !foundListener) {
+              listenerAudioPlayer.src = data.listener_recording_url;
+              listenerAudioSection.classList.add('visible');
+              foundListener = true;
+            }
+            if (foundRestaurant && foundListener) return;
+          }
+        } catch (err) { /* ignore */ }
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "uv run uvicorn outbound.server:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
