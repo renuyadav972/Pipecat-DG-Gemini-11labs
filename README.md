@@ -16,8 +16,9 @@ An AI voice agent that calls pizza restaurants and places orders autonomously us
 ## Features
 
 - Natural voice conversations with restaurant staff
-- IVR/voicemail detection with DTMF navigation (presses buttons on automated phone systems)
+- Waits on the line until a real person picks up (voicemail detection — hangs up if no human available)
 - Listen-in mode — get called first so you can hear the conversation live
+- Transfer to customer — if the restaurant asks for card details, the agent hands the call to you so you can speak directly
 - Special instructions — tell the agent things like "pick a drink for me"
 - Real-time order status tracking via web UI
 - Call recording playback
@@ -75,6 +76,15 @@ Web UI → FastAPI Server → Plivo (phone call)
                      Deepgram STT → Gemini LLM → ElevenLabs TTS
                               ↓
                      Restaurant picks up and talks to the agent
+
+Listen-in + Transfer flow:
+1. Server calls your phone first (listen-in)
+2. Once you answer, server calls the restaurant
+3. You hear the agent placing your order in real-time
+4. If card details are needed, agent says "One moment, let me get my card"
+5. Agent calls transfer_to_customer → bridge mode activates
+6. Your microphone goes live — you speak directly to the restaurant
+7. Agent stays silent for the rest of the call
 ```
 
 ## Deployment
