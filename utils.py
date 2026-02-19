@@ -82,6 +82,9 @@ class TeeWebSocket:
         # Separate buffers for each direction (raw mulaw bytes)
         self._inbound_buf = bytearray()   # restaurant voice
         self._outbound_buf = bytearray()  # agent TTS
+        # Bridge mode: listener can speak to the restaurant
+        self._bridge_mode = False
+        self._bridge_buf = bytearray()    # listener voice → restaurant
         self._sender_task = asyncio.create_task(self._sender_loop())
 
     # -- properties Pipecat reads ------------------------------------------
@@ -93,6 +96,18 @@ class TeeWebSocket:
     @property
     def application_state(self):
         return self._ws.application_state
+
+    # -- bridge mode (let listener speak to restaurant) ---------------------
+
+    def enable_bridge(self):
+        """Enable bidirectional mode — listener audio goes to restaurant."""
+        self._bridge_mode = True
+        logger.info("Bridge mode enabled — customer can now speak to restaurant")
+
+    def feed_bridge_audio(self, audio_bytes: bytes):
+        """Feed audio from listener into the restaurant-bound buffer."""
+        if self._bridge_mode:
+            self._bridge_buf.extend(audio_bytes)
 
     # -- receive (inbound from restaurant) ---------------------------------
 
@@ -159,6 +174,21 @@ class TeeWebSocket:
                 del self._inbound_buf[:TICK_SAMPLES]
                 out_chunk = bytes(self._outbound_buf[:TICK_SAMPLES])
                 del self._outbound_buf[:TICK_SAMPLES]
+
+                # Bridge mode: forward listener audio to restaurant
+                if self._bridge_mode:
+                    bridge_chunk = bytes(self._bridge_buf[:TICK_SAMPLES])
+                    del self._bridge_buf[:TICK_SAMPLES]
+                    if bridge_chunk:
+                        bridge_b64 = base64.b64encode(bridge_chunk).decode("utf-8")
+                        await self._ws.send_text(json.dumps({
+                            "event": "playAudio",
+                            "media": {
+                                "contentType": "audio/x-mulaw",
+                                "sampleRate": 8000,
+                                "payload": bridge_b64,
+                            },
+                        }))
 
                 if not in_chunk and not out_chunk:
                     continue

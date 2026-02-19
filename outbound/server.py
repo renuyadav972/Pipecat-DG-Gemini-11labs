@@ -84,6 +84,7 @@ async def start_order(request: Request):
         "listener_call_uuid": None,
         "listener_ws": None,
         "listener_stream_id": None,
+        "tee_ws": None,
     }
 
     # --- Resolve restaurant phone number ---
@@ -305,10 +306,24 @@ async def plivo_ws_listener(websocket: WebSocket):
     # Trigger the restaurant call in the background
     asyncio.create_task(_call_restaurant(order_id))
 
-    # Keep connection alive — receive and discard until closed
+    # Keep connection alive — forward listener audio when bridge mode is active
     try:
         while True:
-            await websocket.receive()
+            msg = await websocket.receive()
+            text = msg.get("text")
+            if not text:
+                continue
+            try:
+                data = json.loads(text)
+                if data.get("event") == "media":
+                    payload = data.get("media", {}).get("payload", "")
+                    if payload and order_id in orders:
+                        tee_ws = orders[order_id].get("tee_ws")
+                        if tee_ws and hasattr(tee_ws, "feed_bridge_audio"):
+                            import base64
+                            tee_ws.feed_bridge_audio(base64.b64decode(payload))
+            except (json.JSONDecodeError, Exception):
+                pass
     except Exception:
         pass
     finally:
@@ -485,9 +500,16 @@ async def plivo_websocket(websocket: WebSocket):
     order_data = orders.get(order_id, {})
     listener_ws = order_data.get("listener_ws")
     listener_stream_id = order_data.get("listener_stream_id", "")
+    on_transfer = None
     if listener_ws:
         logger.info(f"Wrapping WebSocket with TeeWebSocket for listener (stream_id={listener_stream_id})")
         ws_for_bot = TeeWebSocket(websocket, listener_ws, listener_stream_id)
+        if order_id in orders:
+            orders[order_id]["tee_ws"] = ws_for_bot
+
+        async def on_transfer():
+            ws_for_bot.enable_bridge()
+            logger.info(f"Customer bridged into call for order {order_id}")
     else:
         ws_for_bot = websocket
 
@@ -502,6 +524,7 @@ async def plivo_websocket(websocket: WebSocket):
             call_id=call_id,
             system_prompt=system_prompt,
             order_type=order_type,
+            on_transfer=on_transfer,
         )
     except Exception as e:
         logger.error(f"Bot pipeline error: {e}")

@@ -2,7 +2,8 @@
 
 import os
 
-import plivo
+from typing import Callable
+
 from deepgram import LiveOptions
 from loguru import logger
 
@@ -23,17 +24,16 @@ from pipecat.transports.websocket.fastapi import (
     FastAPIWebsocketTransport,
 )
 
-# DTMF tool definition for Gemini function calling
-send_dtmf_tool = FunctionSchema(
-    name="send_dtmf_digits",
-    description="Press phone keypad buttons (DTMF tones) during the call. Use this when an automated system or voicemail asks you to press a number, like 'press 1 for ordering' or 'press 0 for an operator'.",
-    properties={
-        "digits": {
-            "type": "string",
-            "description": "The digit(s) to press. Can be 0-9, *, or #. Examples: '1', '0', '2'",
-        },
-    },
-    required=["digits"],
+# Tool: transfer the call to the customer for card details etc.
+transfer_to_customer_tool = FunctionSchema(
+    name="transfer_to_customer",
+    description=(
+        "Transfer the call to the customer so they can speak directly to the restaurant. "
+        "Use this when the restaurant asks for credit card details or other sensitive "
+        "information that only the customer can provide."
+    ),
+    properties={},
+    required=[],
 )
 
 
@@ -43,6 +43,7 @@ async def run_bot(
     call_id: str,
     system_prompt: str,
     order_type: str = "pickup",
+    on_transfer: Callable | None = None,
 ):
     """Create and run the Pipecat pipeline for a phone call."""
 
@@ -94,28 +95,33 @@ async def run_bot(
         api_key=os.getenv("GOOGLE_API_KEY", ""),
         model="gemini-2.5-flash",
         system_instruction=system_prompt,
-        tools=[send_dtmf_tool],
+        tools=[transfer_to_customer_tool] if on_transfer else [],
     )
 
-    # Register DTMF function handler
-    async def handle_send_dtmf(params: FunctionCallParams):
-        digits = params.arguments.get("digits", "")
-        logger.info(f"Sending DTMF digits: {digits} (call_id={call_id})")
-        try:
-            client = plivo.RestClient(plivo_auth_id, plivo_auth_token)
-            client.calls.send_digits(call_uuid=call_id, digits=digits, leg="aleg")
-            result = {"status": "sent", "digits": digits}
-            logger.info(f"DTMF sent successfully: {digits}")
-        except Exception as e:
-            result = {"status": "error", "message": str(e)}
-            logger.error(f"Failed to send DTMF: {e}")
-        await params.result_callback(result)
+    # Register transfer handler — bridges customer audio into the call
+    if on_transfer:
+        async def handle_transfer(params: FunctionCallParams):
+            logger.info(f"Transfer to customer requested (call_id={call_id})")
+            try:
+                await on_transfer()
+                result = {
+                    "status": "transferred",
+                    "message": (
+                        "The customer is now speaking directly to the restaurant. "
+                        "IMPORTANT: Stay completely silent. Do not say anything "
+                        "for the rest of the call."
+                    ),
+                }
+            except Exception as e:
+                result = {"status": "error", "message": str(e)}
+                logger.error(f"Transfer failed: {e}")
+            await params.result_callback(result)
 
-    llm.register_function(
-        function_name="send_dtmf_digits",
-        handler=handle_send_dtmf,
-        cancel_on_interruption=False,
-    )
+        llm.register_function(
+            function_name="transfer_to_customer",
+            handler=handle_transfer,
+            cancel_on_interruption=False,
+        )
 
     tts = ElevenLabsTTSService(
         api_key=os.getenv("ELEVENLABS_API_KEY", ""),
